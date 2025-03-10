@@ -4,6 +4,8 @@ subtitle: ESS330
 format: html
 author:
   name: Chloe Rogozinski
+  execute:
+    echo: true
 ---
 
 ```{r}
@@ -201,16 +203,16 @@ Colorado_rolling <- Colorado_pop |>
   mutate( new_cases_14day = rollsum(new_cases, 14, align = "right", fill = NA)) |>
   ungroup()
 
-#normalize by population to get per 100k
+#get per 100k
 Colorado_rolling <- Colorado_rolling |> mutate(new_cases_14day_per_100k = (new_cases_14day / population) * 100000)
 
-#filter for selected date
+#filter 
 threshold_violators <- Colorado_rolling |>
   filter(date == as.Date("2021-01-01")) |>
   filter(new_cases_14day_per_100k > 100) |>
 select(Date = date, County = county, `14-day New Cases per 100k`  = new_cases_14day_per_100k)
 
-# View the threshold violators
+# View 
 flextable(threshold_violators) |>
   set_caption("Counties Exceeding 100 New Cases per 100,000 Over the Past 14 Days (as of Jan 1, 2022)")
 
@@ -223,7 +225,7 @@ flextable(threshold_violators) |>
 library(lubridate)
 library(flextable)
 
-# Ensure fips is character in Colorado_pop (this may be why it broke!)
+# fips is character in Colorado_pop 
 Colorado_pop <- Colorado_pop %>%
   mutate(fips = as.character(fips))
 
@@ -236,11 +238,11 @@ covid_deaths_2021 <- Colorado_pop %>%
     .groups = "drop"
   )
 
-# Make sure pop_data has total_deaths_2021 and fips as character
-pop_data <- pop_data %>%
-  mutate(fips = as.character(fips))  # Ensure same type for joining
 
-# Select only necessary columns from pop_data
+pop_data <- pop_data %>%
+  mutate(fips = as.character(fips))  
+
+
 pop_deaths <- pop_data %>%
   select(fips, County_Name, total_deaths_2021)
 
@@ -259,15 +261,18 @@ high_covid_deaths <- death_analysis %>%
 
 flextable(
   high_covid_deaths %>%
-    select(County = county, `COVID Death %` = covid_death_pct)  # Select and rename for clarity
+    select(County = county, `COVID Death %` = covid_death_pct)  
 ) %>%
   set_caption("Counties Where COVID Deaths Accounted for 20% or More of Total Deaths in 2021")
 
 ```
+# Answer: Scaling COVID-19 deaths against total deaths in each county shows how severe the pandemic was locally. But, due to troubleshooting issues, I was unable to get a clear answer on this question because my table kept coming out blank.
 
 ##6
 
 ```{r}
+library(ggplot2)
+
 state_covid = covid_data %>%
   group_by(date, state) %>%
   summarise(cases = sum(cases), .groups = "drop") %>%
@@ -286,59 +291,67 @@ ggplot(state_covid, aes(x = date)) +
 ```
 
 ```{r}
-# Add STNAME equivalent to pop_data to enable joining
+# Add STNAME to pop_data and filter to only those 4 states
 pop_data <- pop_data %>%
   mutate(STNAME = case_when(
     substr(fips, 1, 2) == "36" ~ "New York",
     substr(fips, 1, 2) == "08" ~ "Colorado",
     substr(fips, 1, 2) == "01" ~ "Alabama",
     substr(fips, 1, 2) == "39" ~ "Ohio"
-  ))
+  )) %>%
+  filter(!is.na(STNAME))  
 
 pp <- pop_data %>%
-  group_by(STNAME) %>%  # Group by state name
-  summarise(state_pop = sum(population), .groups = "drop") %>%  # Sum population
-  inner_join(state_covid, by = c("STNAME" = "state")) %>%  # Join to COVID data
-  mutate(perCap = newCases / state_pop) %>%  # Per capita rate (fraction)
+  group_by(STNAME) %>%
+  summarise(state_pop = sum(population), .groups = "drop") %>%
+  inner_join(state_covid, by = c("STNAME" = "state")) %>%
+  mutate(perCap = newCases / state_pop) %>%
+  arrange(date) %>%  
   group_by(STNAME) %>%
   mutate(roll = zoo::rollmean(perCap, k = 7, align = "right", fill = NA)) %>%
   ungroup()
 
+
 ```
 
 ```{r}
-ggplot(pp, aes(x = date)) +
-  geom_line(aes(y = roll, col = STNAME), size = 1) +
+
+ggplot(pp, aes(x = date, y = roll, color = STNAME, group = STNAME)) +
+  geom_line(size = 1) +
   theme_linedraw() +
-  labs(title = "Cumulative COVID-19 Cases", x = "Date", y = "Case Count", color = "State")
+  labs(title = "7-Day Rolling Average of New COVID-19 Cases Per Capita",
+       x = "Date", y = "New Cases per Capita",
+       color = "State")
+
 ```
+
+# Number 6 answer: Looking at raw case counts shows larger states like New York and Ohio with more cases, but when scaled per capita, smaller states like Alabama and Colorado sometimes had higher infection rates. Scaling by population gives a clearer picture of how widespread COVID-19 was in each state, showing that per capita rates can tell a very different story than total numbers.
 
 ## 7
 
 ```{r}
+library(tidyverse)
+
 meta = read_csv('https://raw.githubusercontent.com/mikejohnson51/csu-ess-330/refs/heads/main/resources/county-centroids.csv') %>%
-  inner_join(covid_data %>% mutate(fips = as.character(fips)), by = "fips") %>%  # fix URL and fips type
+  inner_join(covid_data %>% mutate(fips = as.character(fips)), by = "fips") %>% 
   group_by(date) %>%
   summarise(
-    wmX_c = sum(LON * cases, na.rm = TRUE) / sum(cases, na.rm = TRUE),  # add na.rm = TRUE for safety
+    wmX_c = sum(LON * cases, na.rm = TRUE) / sum(cases, na.rm = TRUE),  
     wmY_c = sum(LAT * cases, na.rm = TRUE) / sum(cases, na.rm = TRUE),
-    cases = sum(cases, na.rm = TRUE),  # make sure to handle any NAs in cases
-    .groups = "drop"  # drop grouping to avoid issues later
+    cases = sum(cases, na.rm = TRUE),  
+    .groups = "drop"  
   ) %>%
   arrange(date) %>%
-  mutate(d = 1:n())  # fixed pipe to stay consistent
+  mutate(d = 1:n())  
 ggplot(meta) +
   geom_point(aes(x = wmX_c, y = wmY_c, size = cases), color = "red", alpha = 0.25) +
   theme_linedraw() +
   theme(
-    panel.background = element_rect(fill = "gray90"),  # light gray background
+    panel.background = element_rect(fill = "gray90"),  
     legend.position = "none"
   ) +
   labs(color = "Time", size = "Cases", x = "", y = "", 
        title = "Weighted Center of COVID-19 Cases")
 
-
-
-
 ```
-
+# Number 7 Answer: The COVID-19 weighted mean center shows how the outbreak moved across the U.S. over time. It started on the East Coast, where the first big outbreaks happened, then shifted west and south as new hotspots appeared. This movement was likely driven by how the virus spread to different regions, population density, and how each state handled public health measures.
